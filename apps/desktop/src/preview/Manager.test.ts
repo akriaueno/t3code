@@ -1184,6 +1184,50 @@ describe("PreviewManager", () => {
     ),
   );
 
+  // Cloudflare Turnstile detects an attached CDP debugger and fails with error
+  // 600010, so ordinary browsing on the default color scheme must not attach one.
+  effectIt.effect(
+    "does not attach the debugger when a webview registers on the default color scheme",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const attach = vi.fn();
+          const sendCommand = vi.fn(async () => undefined);
+          fromId.mockReturnValue({
+            id: 42,
+            isDestroyed: () => false,
+            isDevToolsOpened: () => false,
+            getType: () => "webview",
+            getURL: () => "https://example.com",
+            getTitle: () => "Example",
+            isLoading: () => false,
+            getZoomFactor: () => 1,
+            setZoomFactor: vi.fn(),
+            on: vi.fn(),
+            off: vi.fn(),
+            ipc: { on: vi.fn(), off: vi.fn() },
+            send: webviewSend,
+            navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+            setWindowOpenHandler: vi.fn(),
+            debugger: {
+              isAttached: () => false,
+              attach,
+              sendCommand,
+              on: vi.fn(),
+              off: vi.fn(),
+            },
+          } as never);
+
+          yield* manager.createTab("tab_no_cdp");
+          yield* manager.registerWebview("tab_no_cdp", 42);
+          yield* Effect.yieldNow;
+
+          expect(attach).not.toHaveBeenCalled();
+          expect(sendCommand).not.toHaveBeenCalled();
+        }),
+      ),
+  );
+
   effectIt.effect("emulates prefers-color-scheme and re-applies it across webview swaps", () =>
     withManager((manager) =>
       Effect.gen(function* () {

@@ -2184,10 +2184,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   // color-scheme override the tab carries. The scheme is read after the
   // session attaches so a concurrent setColorScheme is not overwritten with
   // a stale snapshot.
+  //
+  // Ordinary browsing must NOT keep a CDP debugger attached: Cloudflare
+  // Turnstile detects the DevTools-protocol connection and fails its
+  // challenge with error 600010, recreating it every few seconds so login
+  // never completes (#5002). So we only (re)attach here when the tab carries
+  // a non-default color-scheme override that needs the session. A tab on the
+  // default "system" scheme is left with no debugger; the automation paths
+  // (withControlSession) still attach on demand when an agent acts.
   const restoreControlSession = (tabId: string, wc: Electron.WebContents) =>
     Effect.gen(function* () {
       const beforeAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (beforeAttach?.webContentsId !== wc.id) return;
+      if (beforeAttach.colorScheme === "system") return;
       yield* ensureControlSession(wc);
       const afterAttach = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
       if (afterAttach?.webContentsId !== wc.id) {
