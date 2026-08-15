@@ -996,6 +996,54 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               ),
               { concurrency: "unbounded", discard: true },
             );
+            // Cloudflare Turnstile reads navigator.userAgentData and rejects the
+            // preview browser with error 600010 when the UA string claims Chrome
+            // but the Client-Hints brand list only advertises Chromium (no
+            // "Google Chrome"); it then recreates the challenge every few seconds
+            // so login never completes (#5002). Override the User-Agent and
+            // userAgentMetadata together so the UA string, the Sec-CH-UA headers
+            // and navigator.userAgentData describe one self-consistent desktop
+            // Chrome.
+            const fullChromeVersion = process.versions.chrome ?? "146.0.0.0";
+            const majorChromeVersion = fullChromeVersion.split(".")[0] ?? "146";
+            const clientHintPlatform =
+              hostPlatform === "darwin" ? "macOS" : hostPlatform === "win32" ? "Windows" : "Linux";
+            const platformUaToken =
+              hostPlatform === "darwin"
+                ? "Macintosh; Intel Mac OS X 10_15_7"
+                : hostPlatform === "win32"
+                  ? "Windows NT 10.0; Win64; x64"
+                  : "X11; Linux x86_64";
+            const overrideUserAgent = `Mozilla/5.0 (${platformUaToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${majorChromeVersion}.0.0.0 Safari/537.36`;
+            yield* attemptPromise(
+              {
+                operation: "initializeDebugger.Network.setUserAgentOverride",
+                webContentsId: wc.id,
+              },
+              () =>
+                wc.debugger.sendCommand("Network.setUserAgentOverride", {
+                  userAgent: overrideUserAgent,
+                  userAgentMetadata: {
+                    brands: [
+                      { brand: "Not-A.Brand", version: "24" },
+                      { brand: "Chromium", version: majorChromeVersion },
+                      { brand: "Google Chrome", version: majorChromeVersion },
+                    ],
+                    fullVersionList: [
+                      { brand: "Not-A.Brand", version: "24.0.0.0" },
+                      { brand: "Chromium", version: fullChromeVersion },
+                      { brand: "Google Chrome", version: fullChromeVersion },
+                    ],
+                    platform: clientHintPlatform,
+                    platformVersion: "",
+                    architecture: process.arch === "arm64" ? "arm" : "x86",
+                    model: "",
+                    mobile: false,
+                    bitness: "64",
+                    wow64: false,
+                  },
+                }),
+            );
             return [
               control,
               replaceMap(sessions, (copy) => {

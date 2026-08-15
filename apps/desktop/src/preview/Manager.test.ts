@@ -1184,6 +1184,58 @@ describe("PreviewManager", () => {
     ),
   );
 
+  // Cloudflare Turnstile rejects a UA that claims Chrome while Client Hints only
+  // advertise Chromium, so webview registration must override userAgentMetadata to
+  // add a "Google Chrome" brand (#5002).
+  effectIt.effect(
+    "overrides Client Hints with a Google Chrome brand when a webview registers",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const sendCommand = vi.fn(async () => undefined);
+          fromId.mockReturnValue({
+            id: 42,
+            isDestroyed: () => false,
+            isDevToolsOpened: () => false,
+            getType: () => "webview",
+            getURL: () => "https://example.com",
+            getTitle: () => "Example",
+            isLoading: () => false,
+            getZoomFactor: () => 1,
+            setZoomFactor: vi.fn(),
+            on: vi.fn(),
+            off: vi.fn(),
+            ipc: { on: vi.fn(), off: vi.fn() },
+            send: webviewSend,
+            navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+            setWindowOpenHandler: vi.fn(),
+            debugger: {
+              isAttached: () => false,
+              attach: vi.fn(),
+              sendCommand,
+              on: vi.fn(),
+              off: vi.fn(),
+            },
+          } as never);
+
+          yield* manager.createTab("tab_client_hints");
+          yield* manager.registerWebview("tab_client_hints", 42);
+          yield* Effect.yieldNow;
+
+          expect(sendCommand).toHaveBeenCalledWith(
+            "Network.setUserAgentOverride",
+            expect.objectContaining({
+              userAgentMetadata: expect.objectContaining({
+                brands: expect.arrayContaining([
+                  expect.objectContaining({ brand: "Google Chrome" }),
+                ]),
+              }),
+            }),
+          );
+        }),
+      ),
+  );
+
   effectIt.effect("emulates prefers-color-scheme and re-applies it across webview swaps", () =>
     withManager((manager) =>
       Effect.gen(function* () {
