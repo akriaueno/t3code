@@ -134,8 +134,18 @@ export const make = Effect.gen(function* BrowserSessionMake() {
           const browserSession = session.fromPartition(partition);
           const userAgent = browserSession
             .getUserAgent()
-            .replace(/Electron\/[\d.]+ /, "")
-            .replace(/\s*t3code\/[\d.]+/, "");
+            // Remove the Electron product token.
+            .replace(/ Electron\/[\d.]+/, "")
+            // Remove the app's own product token (e.g. "T3Code(Alpha)/0.0.33"),
+            // which sits right before "Chrome/". A non-browser product token
+            // fails Cloudflare Turnstile's browser-integrity check (error 600010),
+            // which then recreates the challenge every few seconds so login never
+            // completes (#5002).
+            .replace(/(\(KHTML, like Gecko\)) [^ ]+\/[^ ]+ (Chrome\/)/, "$1 $2")
+            // Report the reduced "major.0.0.0" Chrome version that real Chrome
+            // freezes to; the full Electron build number is another mismatch that
+            // feeds the same integrity failure.
+            .replace(/(Chrome\/\d+)\.\d+\.\d+\.\d+/, "$1.0.0.0");
           browserSession.setUserAgent(userAgent);
           browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {
             callback(ALLOWED_PREVIEW_PERMISSIONS.has(permission));
